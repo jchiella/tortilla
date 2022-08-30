@@ -13,15 +13,14 @@ use winit::{
 
 fn main() -> Result<(), Error> {
     let mut machine = machine::CHIP8::new();
+    let program = std::fs::read("test.ch8").expect("Problem reading file!");
+    machine.load_program(&program);
 
     let timer_length = Duration::new(1 / machine::CLOCK_SPEED, 0);
 
     let event_loop = EventLoop::new();
     let window = {
-        let size = LogicalSize::new(
-            machine::SCREEN_SIZE_ROWS * 16,
-            machine::SCREEN_SIZE_COLS * 16,
-        );
+        let size = LogicalSize::new(machine::SCREEN_SIZE_X * 16, machine::SCREEN_SIZE_Y * 16);
         WindowBuilder::new()
             .with_title("Tortilla")
             .with_inner_size(size)
@@ -34,8 +33,8 @@ fn main() -> Result<(), Error> {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         Pixels::new(
-            machine::SCREEN_SIZE_ROWS,
-            machine::SCREEN_SIZE_COLS,
+            machine::SCREEN_SIZE_X,
+            machine::SCREEN_SIZE_Y,
             surface_texture,
         )?
     };
@@ -57,8 +56,9 @@ fn main() -> Result<(), Error> {
             control_flow.set_wait_until(Instant::now() + timer_length);
             // main interpreter loop goes here
             let instruction = machine.fetch();
-            machine.decode_and_execute(instruction);
-            window.request_redraw();
+            if machine.decode_and_execute(instruction) {
+                window.request_redraw();
+            }
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,

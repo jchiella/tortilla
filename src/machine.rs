@@ -2,13 +2,13 @@ const MEMORY_SIZE: usize = 4096;
 const STACK_SIZE: usize = 16;
 const NUM_REGISTERS: usize = 16;
 pub const CLOCK_SPEED: u64 = 700; // Hz (instructions/second)
-pub const SCREEN_SIZE_ROWS: u32 = 64;
-pub const SCREEN_SIZE_COLS: u32 = 32;
+pub const SCREEN_SIZE_X: u32 = 64;
+pub const SCREEN_SIZE_Y: u32 = 32;
 
 pub struct CHIP8 {
-    memory: [u16; MEMORY_SIZE],
-    pub screen: [bool; (SCREEN_SIZE_ROWS * SCREEN_SIZE_COLS) as usize],
-    pc: u16,
+    memory: [u8; MEMORY_SIZE],
+    pub screen: [bool; (SCREEN_SIZE_X * SCREEN_SIZE_Y) as usize],
+    pub pc: u16,
     i: u16,
     stack: [u16; STACK_SIZE],
     delay_timer: u8,
@@ -39,7 +39,7 @@ impl CHIP8 {
 
         let mut chip8 = CHIP8 {
             memory: [0; MEMORY_SIZE],
-            screen: [false; (SCREEN_SIZE_ROWS * SCREEN_SIZE_COLS) as usize],
+            screen: [false; (SCREEN_SIZE_X * SCREEN_SIZE_Y) as usize],
             pc: 0x0200,
             i: 0,
             stack: [0; STACK_SIZE],
@@ -53,16 +53,23 @@ impl CHIP8 {
         chip8
     }
 
+    pub fn load_program(&mut self, program: &[u8]) {
+        self.memory[0x0200..(0x0200 + program.len())].copy_from_slice(program);
+    }
+
     pub fn fetch(&mut self) -> u16 {
-        let instruction = self.memory[self.pc as usize] | (self.memory[self.pc as usize + 1] << 8);
+        let instruction = ((self.memory[self.pc as usize] as u16) << 8)
+            | self.memory[self.pc as usize + 1] as u16;
         self.pc += 2;
         instruction
     }
 
-    pub fn decode_and_execute(&mut self, instruction: u16) {
-        let opcode = instruction & 0xf000 >> 12; // the 1st nibble
-        let x = instruction & 0x0f00 >> 8; // the 2nd nibble
-        let y = instruction & 0x00f0 >> 4; // the 3rd nibble
+    pub fn decode_and_execute(&mut self, instruction: u16) -> bool {
+        let mut redraw_required = false;
+
+        let opcode = (instruction & 0xf000) >> 12; // the 1st nibble
+        let x = (instruction & 0x0f00) >> 8; // the 2nd nibble
+        let y = (instruction & 0x00f0) >> 4; // the 3rd nibble
         let n = instruction & 0x000f; // the 4th nibble
         let nn = instruction & 0x00ff; // the 2nd byte (3rd & 4th nibbles)
         let nnn = instruction & 0x0fff; // the 2nd-4th nibbles (12 bits)
@@ -87,11 +94,15 @@ impl CHIP8 {
             0xA => self.set_index_register(nnn),
             0xB => todo!(),
             0xC => todo!(),
-            0xD => self.display(x, y, n),
+            0xD => {
+                self.display(x, y, n);
+                redraw_required = true;
+            }
             0xE => todo!(),
             0xF => todo!(),
             _ => unreachable!(),
         }
+        redraw_required
     }
 
     fn clear_screen(&mut self) {
@@ -118,36 +129,40 @@ impl CHIP8 {
     }
 
     fn display(&mut self, x_register: u16, y_register: u16, sprite_height: u16) {
-        let mut x_coord = self.registers[x_register as usize] % (SCREEN_SIZE_ROWS as u8);
-        let mut y_coord = self.registers[y_register as usize] % (SCREEN_SIZE_COLS as u8);
+        let mut x_coord = (self.registers[x_register as usize] % (SCREEN_SIZE_X as u8)) as u32;
+        let mut y_coord = (self.registers[y_register as usize] % (SCREEN_SIZE_Y as u8)) as u32;
+
+        println!(
+            "Display call: {} px high sprite @ x = {}, y = {}",
+            sprite_height, x_coord, y_coord
+        );
 
         self.registers[0xF] = 0;
 
         for row in 0..sprite_height {
-            if y_coord >= SCREEN_SIZE_ROWS as u8 {
+            if y_coord >= SCREEN_SIZE_Y {
                 break;
             }
 
             let sprite_row = self.memory[(self.i + row) as usize];
             for n in 0..8 {
-                if x_coord >= SCREEN_SIZE_COLS as u8 {
+                if x_coord >= SCREEN_SIZE_X {
                     break;
                 }
 
-                let mask = sprite_row & (1 << n);
-                if mask != 0 && self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] {
-                    self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] = false;
+                let mask = sprite_row & (1 << 7 >> n);
+                if mask != 0 && self.screen[(y_coord * SCREEN_SIZE_X + x_coord) as usize] {
+                    self.screen[(y_coord * SCREEN_SIZE_X + x_coord) as usize] = false;
                     self.registers[0xF] = 1;
-                } else if mask != 0
-                    && !self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize]
-                {
-                    self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] = true;
+                } else if mask != 0 && !self.screen[(y_coord * SCREEN_SIZE_X + x_coord) as usize] {
+                    self.screen[(y_coord * SCREEN_SIZE_X + x_coord) as usize] = true;
                 }
 
                 x_coord += 1;
             }
 
             y_coord += 1;
+            x_coord = (self.registers[x_register as usize] % (SCREEN_SIZE_X as u8)) as u32;
         }
     }
 }

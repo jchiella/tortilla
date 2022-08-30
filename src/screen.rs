@@ -13,8 +13,6 @@ pub fn redraw(pixels: &mut Pixels, screen: &[bool]) -> Result<(), Error> {
         }
     }
 
-    frame[0..4].copy_from_slice(&white);
-
     pixels.render()?;
 
     Ok(())
