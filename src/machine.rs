@@ -60,31 +60,94 @@ impl CHIP8 {
     }
 
     pub fn decode_and_execute(&mut self, instruction: u16) {
-        let opcode = instruction & 0xf000 >> 12;
-        let x = instruction & 0x0f00 >> 8;
-        let y = instruction & 0x00f0 >> 4;
-        let n = instruction & 0x000f;
-        let nn = instruction & 0x0ff0 >> 4;
-        let nnn = instruction & 0x0fff;
+        let opcode = instruction & 0xf000 >> 12; // the 1st nibble
+        let x = instruction & 0x0f00 >> 8; // the 2nd nibble
+        let y = instruction & 0x00f0 >> 4; // the 3rd nibble
+        let n = instruction & 0x000f; // the 4th nibble
+        let nn = instruction & 0x00ff; // the 2nd byte (3rd & 4th nibbles)
+        let nnn = instruction & 0x0fff; // the 2nd-4th nibbles (12 bits)
 
         match opcode {
-            0x0 => todo!(),
-            0x1 => todo!(),
+            0x0 => {
+                if instruction == 0x00E0 {
+                    self.clear_screen();
+                } else {
+                    unimplemented!();
+                }
+            }
+            0x1 => self.jump(nnn),
             0x2 => todo!(),
             0x3 => todo!(),
             0x4 => todo!(),
             0x5 => todo!(),
-            0x6 => todo!(),
-            0x7 => todo!(),
+            0x6 => self.set_register(x, nn),
+            0x7 => self.add_to_register(x, nn),
             0x8 => todo!(),
             0x9 => todo!(),
-            0xA => todo!(),
+            0xA => self.set_index_register(nnn),
             0xB => todo!(),
             0xC => todo!(),
-            0xD => todo!(),
+            0xD => self.display(x, y, n),
             0xE => todo!(),
             0xF => todo!(),
             _ => unreachable!(),
+        }
+    }
+
+    fn clear_screen(&mut self) {
+        for pixel in self.screen.iter_mut() {
+            *pixel = false;
+        }
+    }
+
+    fn jump(&mut self, location: u16) {
+        self.pc = location;
+    }
+
+    fn set_register(&mut self, register: u16, value: u16) {
+        self.registers[register as usize] = value.try_into().expect("whoops!");
+    }
+
+    fn add_to_register(&mut self, register: u16, value: u16) {
+        self.registers[register as usize] =
+            self.registers[register as usize].wrapping_add(value.try_into().expect("whoops!"));
+    }
+
+    fn set_index_register(&mut self, value: u16) {
+        self.i = value;
+    }
+
+    fn display(&mut self, x_register: u16, y_register: u16, sprite_height: u16) {
+        let mut x_coord = self.registers[x_register as usize] % (SCREEN_SIZE_ROWS as u8);
+        let mut y_coord = self.registers[y_register as usize] % (SCREEN_SIZE_COLS as u8);
+
+        self.registers[0xF] = 0;
+
+        for row in 0..sprite_height {
+            if y_coord >= SCREEN_SIZE_ROWS as u8 {
+                break;
+            }
+
+            let sprite_row = self.memory[(self.i + row) as usize];
+            for n in 0..8 {
+                if x_coord >= SCREEN_SIZE_COLS as u8 {
+                    break;
+                }
+
+                let mask = sprite_row & (1 << n);
+                if mask != 0 && self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] {
+                    self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] = false;
+                    self.registers[0xF] = 1;
+                } else if mask != 0
+                    && !self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize]
+                {
+                    self.screen[(y_coord * SCREEN_SIZE_ROWS as u8 + x_coord) as usize] = true;
+                }
+
+                x_coord += 1;
+            }
+
+            y_coord += 1;
         }
     }
 }

@@ -12,7 +12,7 @@ use winit::{
 };
 
 fn main() -> Result<(), Error> {
-    let machine = machine::CHIP8::new();
+    let mut machine = machine::CHIP8::new();
 
     let timer_length = Duration::new(1 / machine::CLOCK_SPEED, 0);
 
