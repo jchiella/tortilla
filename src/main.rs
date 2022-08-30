@@ -13,7 +13,7 @@ use winit::{
 
 fn main() -> Result<(), Error> {
     let mut machine = machine::CHIP8::new();
-    let program = std::fs::read("test.ch8").expect("Problem reading file!");
+    let program = std::fs::read("roms/test_opcode.ch8").expect("Problem reading file!");
     machine.load_program(&program);
 
     let timer_length = Duration::new(1 / machine::CLOCK_SPEED, 0);

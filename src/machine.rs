@@ -1,3 +1,5 @@
+use rand::Rng;
+
 const MEMORY_SIZE: usize = 4096;
 const STACK_SIZE: usize = 16;
 const NUM_REGISTERS: usize = 16;
@@ -5,12 +7,16 @@ pub const CLOCK_SPEED: u64 = 700; // Hz (instructions/second)
 pub const SCREEN_SIZE_X: u32 = 64;
 pub const SCREEN_SIZE_Y: u32 = 32;
 
+const MODERN_SHIFT: bool = true;
+const MODERN_JUMP_WITH_OFFSET: bool = false;
+
 pub struct CHIP8 {
     memory: [u8; MEMORY_SIZE],
     pub screen: [bool; (SCREEN_SIZE_X * SCREEN_SIZE_Y) as usize],
     pub pc: u16,
     i: u16,
     stack: [u16; STACK_SIZE],
+    stack_pointer: usize,
     delay_timer: u8,
     sound_timer: u8,
     registers: [u8; NUM_REGISTERS],
@@ -43,6 +49,7 @@ impl CHIP8 {
             pc: 0x0200,
             i: 0,
             stack: [0; STACK_SIZE],
+            stack_pointer: 0,
             delay_timer: 0,
             sound_timer: 0,
             registers: [0; NUM_REGISTERS],
@@ -75,34 +82,73 @@ impl CHIP8 {
         let nnn = instruction & 0x0fff; // the 2nd-4th nibbles (12 bits)
 
         match opcode {
-            0x0 => {
-                if instruction == 0x00E0 {
-                    self.clear_screen();
-                } else {
-                    unimplemented!();
-                }
-            }
+            0x0 => match nn {
+                0xE0 => self.clear_screen(),
+                0xEE => self.return_from_sub(),
+                _ => unimplemented!(),
+            },
             0x1 => self.jump(nnn),
-            0x2 => todo!(),
-            0x3 => todo!(),
-            0x4 => todo!(),
-            0x5 => todo!(),
-            0x6 => self.set_register(x, nn),
-            0x7 => self.add_to_register(x, nn),
-            0x8 => todo!(),
-            0x9 => todo!(),
+            0x2 => self.call_sub(nnn),
+            0x3 => self.skip_if_equal_literal(x, nn),
+            0x4 => self.skip_if_not_equal_literal(x, nn),
+            0x5 => self.skip_if_equal(x, y),
+            0x6 => self.set_literal(x, nn),
+            0x7 => self.add_literal(x, nn),
+            0x8 => match n {
+                0x0 => self.set(x, y),
+                0x1 => self.binary_or(x, y),
+                0x2 => self.binary_and(x, y),
+                0x3 => self.logical_xor(x, y),
+                0x4 => self.add(x, y),
+                0x5 => self.subtract1(x, y),
+                0x6 => self.shift_right(x, y),
+                0x7 => self.subtract2(x, y),
+                0xE => self.shift_left(x, y),
+                _ => unimplemented!(),
+            },
+            0x9 => self.skip_if_not_equal(x, y),
             0xA => self.set_index_register(nnn),
-            0xB => todo!(),
-            0xC => todo!(),
+            0xB => self.jump_with_offset(x, nnn),
+            0xC => self.random(x, nn),
             0xD => {
                 self.display(x, y, n);
                 redraw_required = true;
             }
-            0xE => todo!(),
-            0xF => todo!(),
+            0xE => match nn {
+                0x9E => self.skip_if_key_pressed(x),
+                0xA1 => self.skip_if_key_not_pressed(x),
+                _ => unreachable!(),
+            },
+            0xF => match nn {
+                0x07 => self.get_delay_timer(x),
+                0x15 => self.set_delay_timer(x),
+                0x18 => self.set_sound_timer(x),
+                0x1E => self.add_to_index(x),
+                0x0A => self.get_key(x),
+                0x29 => self.get_font_character(x),
+                0x33 => self.convert_bcd(x),
+                0x55 => self.store_memory(x),
+                0x65 => self.load_memory(x),
+                _ => unreachable!(),
+            },
             _ => unreachable!(),
         }
         redraw_required
+    }
+
+    fn push_stack(&mut self, value: u16) {
+        self.stack[self.stack_pointer] = value;
+        self.stack_pointer += 1;
+
+        if self.stack_pointer >= self.stack.len() {
+            panic!("Stack overflow!");
+        }
+    }
+
+    fn pop_stack(&mut self) -> u16 {
+        let value = self.stack[self.stack_pointer];
+        self.stack_pointer -= 1;
+        value
     }
 
     fn clear_screen(&mut self) {
@@ -111,21 +157,148 @@ impl CHIP8 {
         }
     }
 
+    fn return_from_sub(&mut self) {
+        self.pc = self.pop_stack();
+    }
+
     fn jump(&mut self, location: u16) {
         self.pc = location;
     }
 
-    fn set_register(&mut self, register: u16, value: u16) {
+    fn call_sub(&mut self, location: u16) {
+        self.push_stack(self.pc);
+        self.pc = location;
+    }
+
+    fn skip_if_equal_literal(&mut self, register: u16, value: u16) {
+        if self.registers[register as usize] as u16 == value {
+            self.pc += 2;
+        }
+    }
+
+    fn skip_if_not_equal_literal(&mut self, register: u16, value: u16) {
+        if self.registers[register as usize] as u16 != value {
+            self.pc += 2;
+        }
+    }
+
+    fn skip_if_equal(&mut self, register1: u16, register2: u16) {
+        if self.registers[register1 as usize] == self.registers[register2 as usize] {
+            self.pc += 2;
+        }
+    }
+
+    fn set_literal(&mut self, register: u16, value: u16) {
         self.registers[register as usize] = value.try_into().expect("whoops!");
     }
 
-    fn add_to_register(&mut self, register: u16, value: u16) {
+    fn add_literal(&mut self, register: u16, value: u16) {
         self.registers[register as usize] =
             self.registers[register as usize].wrapping_add(value.try_into().expect("whoops!"));
     }
 
+    fn set(&mut self, register1: u16, register2: u16) {
+        self.registers[register1 as usize] = self.registers[register2 as usize];
+    }
+
+    fn binary_or(&mut self, register1: u16, register2: u16) {
+        self.registers[register1 as usize] =
+            self.registers[register1 as usize] | self.registers[register2 as usize];
+    }
+
+    fn binary_and(&mut self, register1: u16, register2: u16) {
+        self.registers[register1 as usize] =
+            self.registers[register1 as usize] & self.registers[register2 as usize];
+    }
+
+    fn logical_xor(&mut self, register1: u16, register2: u16) {
+        self.registers[register1 as usize] =
+            self.registers[register1 as usize] ^ self.registers[register2 as usize];
+    }
+
+    fn add(&mut self, register1: u16, register2: u16) {
+        let overflowed;
+        (self.registers[register1 as usize], overflowed) =
+            self.registers[register1 as usize].overflowing_add(self.registers[register2 as usize]);
+        if overflowed {
+            self.registers[0xF] = 1;
+        } else {
+            self.registers[0xF] = 0;
+        }
+    }
+
+    fn subtract1(&mut self, register1: u16, register2: u16) {
+        let overflowed;
+        (self.registers[register1 as usize], overflowed) =
+            self.registers[register1 as usize].overflowing_sub(self.registers[register2 as usize]);
+        if overflowed {
+            self.registers[0xF] = 0;
+        } else {
+            self.registers[0xF] = 1;
+        }
+    }
+
+    fn subtract2(&mut self, register1: u16, register2: u16) {
+        let overflowed;
+        (self.registers[register1 as usize], overflowed) =
+            self.registers[register2 as usize].overflowing_sub(self.registers[register1 as usize]);
+        if overflowed {
+            self.registers[0xF] = 1;
+        } else {
+            self.registers[0xF] = 0;
+        }
+    }
+
+    fn shift_right(&mut self, register1: u16, register2: u16) {
+        if !MODERN_SHIFT {
+            self.registers[register1 as usize] = self.registers[register2 as usize];
+        }
+        let overflowed;
+        (self.registers[register1 as usize], overflowed) =
+            self.registers[register1 as usize].overflowing_shr(1);
+        if overflowed {
+            self.registers[0xF] = 1;
+        } else {
+            self.registers[0xF] = 0;
+        }
+    }
+
+    fn shift_left(&mut self, register1: u16, register2: u16) {
+        if !MODERN_SHIFT {
+            self.registers[register1 as usize] = self.registers[register2 as usize];
+        }
+        let overflowed;
+        (self.registers[register1 as usize], overflowed) =
+            self.registers[register1 as usize].overflowing_shl(1);
+        if overflowed {
+            self.registers[0xF] = 1;
+        } else {
+            self.registers[0xF] = 0;
+        }
+    }
+
+    fn skip_if_not_equal(&mut self, register1: u16, register2: u16) {
+        if self.registers[register1 as usize] != self.registers[register2 as usize] {
+            self.pc += 2;
+        }
+    }
+
     fn set_index_register(&mut self, value: u16) {
         self.i = value;
+    }
+
+    fn jump_with_offset(&mut self, register: u16, location: u16) {
+        if MODERN_JUMP_WITH_OFFSET {
+            self.pc = location + self.registers[register as usize] as u16;
+        } else {
+            self.pc = location + self.registers[0] as u16;
+        }
+    }
+
+    fn random(&mut self, register: u16, value: u16) {
+        let mut rng = rand::thread_rng();
+        let random_value = rng.gen_range(0..u8::MAX);
+        self.registers[register as usize] = (random_value as u16 & value) as u8;
     }
 
     fn display(&mut self, x_register: u16, y_register: u16, sprite_height: u16) {
@@ -164,5 +337,49 @@ impl CHIP8 {
             y_coord += 1;
             x_coord = (self.registers[x_register as usize] % (SCREEN_SIZE_X as u8)) as u32;
         }
+    }
+
+    fn skip_if_key_pressed(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn skip_if_key_not_pressed(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn get_delay_timer(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn set_delay_timer(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn set_sound_timer(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn add_to_index(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn get_key(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn get_font_character(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn convert_bcd(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn store_memory(&mut self, register: u16) {
+        todo!();
+    }
+
+    fn load_memory(&mut self, register: u16) {
+        todo!();
     }
 }
