@@ -9,6 +9,7 @@ pub const SCREEN_SIZE_Y: u32 = 32;
 
 const MODERN_SHIFT: bool = true;
 const MODERN_JUMP_WITH_OFFSET: bool = false;
+const MODERN_LOAD_STORE: bool = true;
 
 pub struct CHIP8 {
     memory: [u8; MEMORY_SIZE],
@@ -146,7 +147,7 @@ impl CHIP8 {
     }
 
     fn pop_stack(&mut self) -> u16 {
-        let value = self.stack[self.stack_pointer];
+        let value = self.stack[self.stack_pointer - 1];
         self.stack_pointer -= 1;
         value
     }
@@ -305,11 +306,6 @@ impl CHIP8 {
         let mut x_coord = (self.registers[x_register as usize] % (SCREEN_SIZE_X as u8)) as u32;
         let mut y_coord = (self.registers[y_register as usize] % (SCREEN_SIZE_Y as u8)) as u32;
 
-        println!(
-            "Display call: {} px high sprite @ x = {}, y = {}",
-            sprite_height, x_coord, y_coord
-        );
-
         self.registers[0xF] = 0;
 
         for row in 0..sprite_height {
@@ -340,27 +336,31 @@ impl CHIP8 {
     }
 
     fn skip_if_key_pressed(&mut self, register: u16) {
-        todo!();
+        println!("Key presses NYI");
     }
 
     fn skip_if_key_not_pressed(&mut self, register: u16) {
-        todo!();
+        println!("Key presses NYI");
     }
 
     fn get_delay_timer(&mut self, register: u16) {
-        todo!();
+        self.registers[register as usize] = self.delay_timer;
     }
 
     fn set_delay_timer(&mut self, register: u16) {
-        todo!();
+        self.delay_timer = self.registers[register as usize];
     }
 
     fn set_sound_timer(&mut self, register: u16) {
-        todo!();
+        self.sound_timer = self.registers[register as usize];
     }
 
     fn add_to_index(&mut self, register: u16) {
-        todo!();
+        self.i += self.registers[register as usize] as u16;
+
+        if self.i > 0x0FFF {
+            self.registers[0xF] = 1;
+        }
     }
 
     fn get_key(&mut self, register: u16) {
@@ -368,18 +368,32 @@ impl CHIP8 {
     }
 
     fn get_font_character(&mut self, register: u16) {
-        todo!();
+        self.i = 0x0050 + self.registers[register as usize] as u16 * 5;
     }
 
     fn convert_bcd(&mut self, register: u16) {
-        todo!();
+        self.memory[self.i as usize] = self.registers[register as usize] / 100;
+        self.memory[self.i as usize + 1] = (self.registers[register as usize] / 10) % 10;
+        self.memory[self.i as usize + 2] = (self.registers[register as usize] % 100) % 10;
     }
 
-    fn store_memory(&mut self, register: u16) {
-        todo!();
+    fn store_memory(&mut self, max_register: u16) {
+        for register in 0..=max_register {
+            self.memory[(self.i + register) as usize] = self.registers[register as usize];
+        }
+
+        if !MODERN_LOAD_STORE {
+            self.i += max_register;
+        }
     }
 
-    fn load_memory(&mut self, register: u16) {
-        todo!();
+    fn load_memory(&mut self, max_register: u16) {
+        for register in 0..=max_register {
+            self.registers[register as usize] = self.memory[(self.i + register) as usize];
+        }
+
+        if !MODERN_LOAD_STORE {
+            self.i += max_register;
+        }
     }
 }
