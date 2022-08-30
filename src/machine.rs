@@ -7,7 +7,7 @@ pub const SCREEN_SIZE_COLS: u32 = 32;
 
 pub struct CHIP8 {
     memory: [u16; MEMORY_SIZE],
-    screen: [bool; (SCREEN_SIZE_ROWS * SCREEN_SIZE_COLS) as usize],
+    pub screen: [bool; (SCREEN_SIZE_ROWS * SCREEN_SIZE_COLS) as usize],
     pc: u16,
     i: u16,
     stack: [u16; STACK_SIZE],

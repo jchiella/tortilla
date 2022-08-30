@@ -42,7 +42,7 @@ fn main() -> Result<(), Error> {
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::RedrawRequested(_) => {
-            if screen::redraw(&mut pixels)
+            if screen::redraw(&mut pixels, &machine.screen)
                 .map_err(|e| println!("Error redrawing screen: {}", e))
                 .is_err()
             {
@@ -58,6 +58,7 @@ fn main() -> Result<(), Error> {
             // main interpreter loop goes here
             let instruction = machine.fetch();
             machine.decode_and_execute(instruction);
+            window.request_redraw();
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
